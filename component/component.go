@@ -1,14 +1,24 @@
 package component
 
 import (
+	"sync"
+
 	"github.com/surkovvs/ct-app/appifaces"
 	"github.com/surkovvs/ct-app/zorro"
 )
 
+type provider struct {
+	wgExec  *sync.WaitGroup
+	wgSd    *sync.WaitGroup
+	errChan chan<- error
+}
+
 type Comp struct {
-	name   string
-	object any
-	status zorro.Zorro
+	prov      provider
+	status    zorro.Zorro
+	object    any
+	groupName string
+	name      string
 }
 
 const (
@@ -37,31 +47,39 @@ const (
 	healthcheckMask      zorro.Mask   = 61440 // 1111000000000000
 )
 
-type (
-	healthcheck Comp
-	initialize  Comp
-	run         Comp
-	shutdown    Comp
-)
+type Define struct {
+	GroupName  string
+	CompName   string
+	Component  any
+	ExecWG     *sync.WaitGroup
+	ShutdownWG *sync.WaitGroup
+	ErrChan    chan<- error
+}
 
-func DefineComponent(name string, component any) Comp {
+func DefineComponent(d Define) Comp {
 	status := zorro.New()
-	if _, ok := component.(appifaces.Healthchecker); ok {
+	if _, ok := d.Component.(appifaces.Healthchecker); ok {
 		status.SetStatus(healthcheckReady, healthcheckMask)
 	}
-	if _, ok := component.(appifaces.Initializer); ok {
+	if _, ok := d.Component.(appifaces.Initializer); ok {
 		status.SetStatus(initReady, initMask)
 	}
-	if _, ok := component.(appifaces.Runner); ok {
+	if _, ok := d.Component.(appifaces.Runner); ok {
 		status.SetStatus(runReady, runMask)
 	}
-	if _, ok := component.(appifaces.Shutdowner); ok {
+	if _, ok := d.Component.(appifaces.Shutdowner); ok {
 		status.SetStatus(shutdownReady, shutdownMask)
 	}
 	return Comp{
-		name:   name,
-		object: component,
+		name:   d.CompName,
+		object: d.Component,
 		status: status,
+		prov: provider{
+			wgExec:  d.ExecWG,
+			wgSd:    d.ShutdownWG,
+			errChan: d.ErrChan,
+		},
+		groupName: d.GroupName,
 	}
 }
 
@@ -73,8 +91,6 @@ func (c Comp) Name() string {
 	return c.name
 }
 
-// healthcheck crew
-
 func (c Comp) IsHealthchecker() bool {
 	return c.status.GetStatus().Querying(healthcheckMask) != 0
 }
@@ -82,48 +98,6 @@ func (c Comp) IsHealthchecker() bool {
 func (c Comp) Healthchecker() healthcheck {
 	return healthcheck(c)
 }
-
-func (r healthcheck) SetReady() {
-	r.status.SetStatus(healthcheckReady, healthcheckMask)
-}
-
-func (r healthcheck) SetInProcess() {
-	r.status.SetStatus(healthcheckInProcess, healthcheckMask)
-}
-
-func (r healthcheck) SetDone() {
-	r.status.SetStatus(healthcheckDone, healthcheckMask)
-}
-
-func (r healthcheck) SetFailed() {
-	r.status.SetStatus(healthcheckFailed, healthcheckMask)
-}
-
-func (r healthcheck) TrySetInProcess() bool {
-	return r.status.TryChangeStatus(healthcheckReady, healthcheckInProcess, healthcheckMask)
-}
-
-func (r healthcheck) IsReady() bool {
-	return r.status.GetStatus().CompareMasked(healthcheckReady, healthcheckMask)
-}
-
-func (r healthcheck) IsInProcess() bool {
-	return r.status.GetStatus().CompareMasked(healthcheckInProcess, healthcheckMask)
-}
-
-func (r healthcheck) IsDone() bool {
-	return r.status.GetStatus().CompareMasked(healthcheckDone, healthcheckMask)
-}
-
-func (r healthcheck) IsFailed() bool {
-	return r.status.GetStatus().CompareMasked(healthcheckFailed, healthcheckMask)
-}
-
-func (r healthcheck) Get() appifaces.Healthchecker {
-	return r.object.(appifaces.Healthchecker)
-}
-
-// initialize crew
 
 func (c Comp) IsInitializer() bool {
 	return c.status.GetStatus().Querying(initMask) != 0
@@ -133,48 +107,6 @@ func (c Comp) Initializer() initialize {
 	return initialize(c)
 }
 
-func (r initialize) SetReady() {
-	r.status.SetStatus(initReady, initMask)
-}
-
-func (r initialize) SetInProcess() {
-	r.status.SetStatus(initInProcess, initMask)
-}
-
-func (r initialize) SetDone() {
-	r.status.SetStatus(initDone, initMask)
-}
-
-func (r initialize) SetFailed() {
-	r.status.SetStatus(initFailed, initMask)
-}
-
-func (r initialize) TrySetInProcess() bool {
-	return r.status.TryChangeStatus(initReady, initInProcess, initMask)
-}
-
-func (r initialize) IsReady() bool {
-	return r.status.GetStatus().CompareMasked(initReady, initMask)
-}
-
-func (r initialize) IsInProcess() bool {
-	return r.status.GetStatus().CompareMasked(initInProcess, initMask)
-}
-
-func (r initialize) IsDone() bool {
-	return r.status.GetStatus().CompareMasked(initDone, initMask)
-}
-
-func (r initialize) IsFailed() bool {
-	return r.status.GetStatus().CompareMasked(initFailed, initMask)
-}
-
-func (r initialize) Get() appifaces.Initializer {
-	return r.object.(appifaces.Initializer)
-}
-
-// run crew
-
 func (c Comp) IsRunner() bool {
 	return c.status.GetStatus().Querying(runMask) != 0
 }
@@ -183,92 +115,10 @@ func (c Comp) Runner() run {
 	return run(c)
 }
 
-func (r run) SetReady() {
-	r.status.SetStatus(runReady, runMask)
-}
-
-func (r run) SetInProcess() {
-	r.status.SetStatus(runInProcess, runMask)
-}
-
-func (r run) SetDone() {
-	r.status.SetStatus(runDone, runMask)
-}
-
-func (r run) SetFailed() {
-	r.status.SetStatus(runFailed, runMask)
-}
-
-func (r run) TrySetInProcess() bool {
-	return r.status.TryChangeStatus(runReady, runInProcess, runMask)
-}
-
-func (r run) IsReady() bool {
-	return r.status.GetStatus().CompareMasked(runReady, runMask)
-}
-
-func (r run) IsInProcess() bool {
-	return r.status.GetStatus().CompareMasked(runInProcess, runMask)
-}
-
-func (r run) IsDone() bool {
-	return r.status.GetStatus().CompareMasked(runDone, runMask)
-}
-
-func (r run) IsFailed() bool {
-	return r.status.GetStatus().CompareMasked(runFailed, runMask)
-}
-
-func (r run) Get() appifaces.Runner {
-	return r.object.(appifaces.Runner)
-}
-
-// shutdown crew
-
 func (c Comp) IsShutdowner() bool {
 	return c.status.GetStatus().Querying(shutdownMask) != 0
 }
 
 func (c Comp) Shutdowner() shutdown {
 	return shutdown(c)
-}
-
-func (r shutdown) SetReady() {
-	r.status.SetStatus(shutdownReady, shutdownMask)
-}
-
-func (r shutdown) SetInProcess() {
-	r.status.SetStatus(shutdownInProcess, shutdownMask)
-}
-
-func (r shutdown) SetDone() {
-	r.status.SetStatus(shutdownDone, shutdownMask)
-}
-
-func (r shutdown) SetFailed() {
-	r.status.SetStatus(shutdownFailed, shutdownMask)
-}
-
-func (r shutdown) TrySetInProcess() bool {
-	return r.status.TryChangeStatus(shutdownReady, shutdownInProcess, shutdownMask)
-}
-
-func (r shutdown) IsReady() bool {
-	return r.status.GetStatus().CompareMasked(shutdownReady, shutdownMask)
-}
-
-func (r shutdown) IsInProcess() bool {
-	return r.status.GetStatus().CompareMasked(shutdownInProcess, shutdownMask)
-}
-
-func (r shutdown) IsDone() bool {
-	return r.status.GetStatus().CompareMasked(shutdownDone, shutdownMask)
-}
-
-func (r shutdown) IsFailed() bool {
-	return r.status.GetStatus().CompareMasked(shutdownFailed, shutdownMask)
-}
-
-func (r shutdown) Get() appifaces.Shutdowner {
-	return r.object.(appifaces.Shutdowner)
 }

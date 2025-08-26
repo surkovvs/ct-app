@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -21,6 +22,7 @@ var (
 
 type (
 	execution struct {
+		wg            *sync.WaitGroup
 		done          chan struct{}
 		errFlow       chan error
 		initRunCancel context.CancelFunc
@@ -28,6 +30,8 @@ type (
 	}
 	shutdown struct {
 		ctx          context.Context
+		ctxCancel    context.CancelFunc
+		wg           *sync.WaitGroup
 		shutdownDone chan struct{}
 		sigs         []os.Signal
 		timeout      *time.Duration
@@ -43,15 +47,19 @@ type (
 )
 
 func New(opts ...appOption) *app {
+	sdCtx, sdCancel := context.WithCancel(context.Background())
 	a := &app{
 		execution: execution{
+			wg:            &sync.WaitGroup{},
 			done:          make(chan struct{}),
 			errFlow:       make(chan error),
 			initRunCancel: nil,
 			initTimeout:   nil,
 		},
 		shutdown: shutdown{
-			ctx:          context.Background(),
+			ctx:          sdCtx,
+			ctxCancel:    sdCancel,
+			wg:           &sync.WaitGroup{},
 			shutdownDone: make(chan struct{}),
 			sigs:         nil,
 			timeout:      nil,

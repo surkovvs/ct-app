@@ -1,64 +1,60 @@
 package ctapp
 
 import (
-	"context"
-	"fmt"
-	"os"
-	"sync"
+	"time"
 
 	"github.com/surkovvs/ct-app/component"
 )
 
+func (a *app) fillupShutdownWg() {
+	for range a.storage.GetUnsortedShutdowners() {
+		a.shutdown.wg.Add(1)
+	}
+}
+
 func (a *app) gracefulShutdown() {
-	wg := sync.WaitGroup{}
+	defer close(a.shutdown.shutdownDone)
 
-	gsDone := make(chan struct{})
-
-	ctx, cancel := context.WithTimeout(a.shutdown.ctx, *a.shutdown.timeout)
-	defer cancel()
+	go func() {
+		time.Sleep(*a.shutdown.timeout)
+		a.shutdown.ctxCancel()
+	}()
 
 	for _, module := range a.storage.GetUnsortedShutdowners() {
-		wg.Add(1)
 		go func(module component.Comp) {
-			defer wg.Done()
-
 			if module.Shutdowner().TrySetInProcess() {
-				if err := module.Shutdowner().Get().Shutdown(ctx); err != nil {
-					a.execution.errFlow <- fmt.Errorf(
-						`shutdown module "%s", failed: %w`,
-						module.Name(), err)
-					module.Shutdowner().SetFailed()
-					return
-				}
-				module.Shutdowner().SetDone()
+				a.logger.Debug(`Module shutdown`,
+					`application`, a.name,
+					`module`, module.Name())
+
+				module.Shutdowner().Shutdown(a.shutdown.ctx)
 			}
 		}(module)
 	}
 
+	gsDone := make(chan struct{})
 	go func() {
-		wg.Wait()
+		a.shutdown.wg.Wait()
 		close(gsDone)
 	}()
 
-SelLabel:
 	select {
 	case <-gsDone:
-		a.logger.Info(`graceful shutdown finished for all bacground runners`,
+		a.logger.Info(`graceful shutdown finished`,
 			"application", a.name)
+
+	case <-a.shutdown.ctx.Done():
+		var unfinished []string
 		for _, module := range a.storage.GetUnsortedShutdowners() {
 			if module.Shutdowner().IsInProcess() {
-				a.logger.Info(`graceful shutdown for cron module still in process, app shutdown time goes to max limit`,
-					"application", a.name,
-					`module`, module.Name())
-				<-ctx.Done()
-				break SelLabel
+				unfinished = append(unfinished, module.Name())
 			}
 		}
-
-	case <-ctx.Done():
-		a.logger.Error(`graceful shutdown timeout exeeded`,
-			"application", a.name)
+		if unfinished != nil {
+			a.logger.Error(`graceful shutdown timeout exeeded`,
+				"application", a.name,
+				"unfinished shutdowns for modules", unfinished,
+			)
+		}
 	}
-
-	os.Exit(a.shutdown.exitCode)
 }
