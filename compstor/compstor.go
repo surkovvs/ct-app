@@ -37,7 +37,7 @@ func NewCompsStorage() CompsStorage {
 	}
 }
 
-func (cs *CompsStorage) AddComponent(groupName, compName string, comp component.Comp) error {
+func (cs *CompsStorage) AddComponent(groupName string, comp component.Comp) error {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 
@@ -100,6 +100,22 @@ func (cs *CompsStorage) GetGroupByName(name string) (SequentialGroup, error) {
 		return group, ErrGroupNotFound
 	}
 	return group, nil
+}
+
+func (cs *CompsStorage) GetUnsortedHealthcheckers() []component.Comp {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+
+	compList := make([]component.Comp, 0)
+	for _, group := range cs.groups {
+		for _, comp := range group.comps {
+			if comp.IsHealthchecker() {
+				compList = append(compList, comp)
+			}
+		}
+	}
+
+	return compList
 }
 
 func (cs *CompsStorage) GetUnsortedRunners() []component.Comp {

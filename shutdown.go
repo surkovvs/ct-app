@@ -6,13 +6,13 @@ import (
 	"github.com/surkovvs/ct-app/component"
 )
 
-func (a *app) fillupShutdownWg() {
+func (a *App) fillupShutdownWg() {
 	for range a.storage.GetUnsortedShutdowners() {
 		a.shutdown.wg.Add(1)
 	}
 }
 
-func (a *app) gracefulShutdown() {
+func (a *App) gracefulShutdown() {
 	defer close(a.shutdown.shutdownDone)
 
 	go func() {

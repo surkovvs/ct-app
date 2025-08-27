@@ -2,6 +2,7 @@ package ctapp
 
 import "fmt"
 
+//nolint:gochecknoglobals // as planned
 var nameficator groupSequentialNamer
 
 type groupSequentialNamer struct {

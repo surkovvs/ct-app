@@ -7,46 +7,50 @@ import (
 	"github.com/surkovvs/ct-app/appifaces"
 )
 
-type initialize Comp
+type Initialize Comp
 
-func (r initialize) SetReady() {
+func (r Initialize) SetReady() {
 	r.status.SetStatus(initReady, initMask)
 }
 
-func (r initialize) SetInProcess() {
+func (r Initialize) SetInProcess() {
 	r.status.SetStatus(initInProcess, initMask)
 }
 
-func (r initialize) SetDone() {
+func (r Initialize) SetDone() {
 	r.status.SetStatus(initDone, initMask)
 }
 
-func (r initialize) SetFailed() {
+func (r Initialize) SetFailed() {
 	r.status.SetStatus(initFailed, initMask)
 }
 
-func (r initialize) TrySetInProcess() bool {
+func (r Initialize) TrySetInProcess() bool {
 	return r.status.TryChangeStatus(initReady, initInProcess, initMask)
 }
 
-func (r initialize) IsReady() bool {
+func (r Initialize) IsReady() bool {
 	return r.status.GetStatus().CompareMasked(initReady, initMask)
 }
 
-func (r initialize) IsInProcess() bool {
+func (r Initialize) IsInProcess() bool {
 	return r.status.GetStatus().CompareMasked(initInProcess, initMask)
 }
 
-func (r initialize) IsDone() bool {
+func (r Initialize) IsDone() bool {
 	return r.status.GetStatus().CompareMasked(initDone, initMask)
 }
 
-func (r initialize) IsFailed() bool {
+func (r Initialize) IsFailed() bool {
 	return r.status.GetStatus().CompareMasked(initFailed, initMask)
 }
 
-func (r initialize) Init(ctx context.Context) {
-	if err := r.object.(appifaces.Initializer).Init(ctx); err != nil {
+func (r Initialize) Init(ctx context.Context) {
+	initializer, ok := r.object.(appifaces.Initializer)
+	if !ok {
+		panic(fmt.Sprintf(`group '%s', module '%s', incorrectly defined as Initializer`, r.groupName, r.name))
+	}
+	if err := initializer.Init(ctx); err != nil {
 		r.prov.errChan <- fmt.Errorf(
 			`group '%s', module '%s', init: %w`,
 			r.groupName, r.name, err)

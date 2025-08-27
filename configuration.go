@@ -8,10 +8,11 @@ import (
 )
 
 type ConfigApp struct {
-	Silient         bool
-	Name            *string
-	InitTimeout     *time.Duration
-	ShutdownTimeout *time.Duration
+	Silient                  bool
+	KeepProcessOnModuleError bool // TODO: добавить реализацию
+	Name                     *string
+	InitTimeout              *time.Duration
+	ShutdownTimeout          *time.Duration
 }
 
 func (c ConfigApp) IsSilientMode() bool {
@@ -30,22 +31,22 @@ func (c ConfigApp) GetShutdownTimeout() *time.Duration {
 	return c.ShutdownTimeout
 }
 
-type appOption func(*app)
+type AppOption func(*App)
 
-func WithLogger(logger appifaces.Logger) appOption {
-	return func(a *app) {
+func WithLogger(logger appifaces.Logger) AppOption {
+	return func(a *App) {
 		a.logger = logger
 	}
 }
 
-func WithProvidedSigs(sigs ...os.Signal) appOption {
-	return func(a *app) {
+func WithProvidedSigs(sigs ...os.Signal) AppOption {
+	return func(a *App) {
 		a.shutdown.sigs = sigs
 	}
 }
 
-func WithConfig(cfg appifaces.Configurator) appOption {
-	return func(a *app) {
+func WithConfig(cfg appifaces.Configurator) AppOption {
+	return func(a *App) {
 		if cfg.IsSilientMode() {
 			a.logger = logStub{}
 		}
@@ -61,7 +62,7 @@ func WithConfig(cfg appifaces.Configurator) appOption {
 	}
 }
 
-func (a *app) defaultSettingsCheckAndApply() {
+func (a *App) defaultSettingsCheckAndApply() {
 	if a.name == "" {
 		a.name = `unnamed`
 	}
@@ -71,27 +72,27 @@ func (a *app) defaultSettingsCheckAndApply() {
 	}
 
 	if a.shutdown.sigs == nil {
-		a.shutdown.sigs = defaultProvidedSigs
+		a.shutdown.sigs = DefaultProvidedSigs
 	}
 	if a.shutdown.timeout == nil {
-		a.shutdown.timeout = &defaultShutdownTimeout
+		a.shutdown.timeout = &DefaultShutdownTimeout
 	}
 }
 
-// func WithName(name string) appOption {
-// 	return func(a *app) {
+// func WithName(name string) AppOption {
+// 	return func(a *App) {
 // 		a.name = name
 // 	}
 // }
 
-// func WithInitTimeout(to time.Duration) appOption {
-// 	return func(a *app) {
+// func WithInitTimeout(to time.Duration) AppOption {
+// 	return func(a *App) {
 // 		a.execution.initTimeout = &to
 // 	}
 // }
 
-// func WithShutdownTimeout(to time.Duration) appOption {
-// 	return func(a *app) {
+// func WithShutdownTimeout(to time.Duration) AppOption {
+// 	return func(a *App) {
 // 		a.shutdown.timeout = &to
 // 	}
 // }

@@ -22,47 +22,47 @@ func (z Zorro) GetStatus() Status {
 	return Status(atomic.LoadUint64(z.status))
 }
 
-// Concurrently safe setup bits
-func (c Zorro) SetStatus(status Status, mask Mask) {
+// SetStatus - concurrently safe setup bits.
+func (z Zorro) SetStatus(status Status, mask Mask) {
 	for {
-		if c.TrySetStatus(status, mask) {
+		if z.TrySetStatus(status, mask) {
 			return
 		}
 	}
 }
 
-func (c Zorro) TrySetStatus(status Status, mask Mask) bool {
-	cur := atomic.LoadUint64(c.status)
-	new := Status(cur).SetWithMask(status, mask)
-	return atomic.CompareAndSwapUint64(c.status, cur, new)
+func (z Zorro) TrySetStatus(status Status, mask Mask) bool {
+	cur := atomic.LoadUint64(z.status)
+	upd := Status(cur).SetWithMask(status, mask)
+	return atomic.CompareAndSwapUint64(z.status, cur, upd)
 }
 
-// compare and swap but masked
-func (c Zorro) TryChangeStatus(prev, next Status, mask Mask) bool {
-	cur := atomic.LoadUint64(c.status)
+// TryChangeStatus - compare and swap but masked.
+func (z Zorro) TryChangeStatus(prev, next Status, mask Mask) bool {
+	cur := atomic.LoadUint64(z.status)
 	if !prev.CompareMasked(Status(cur), mask) {
 		return false
 	}
-	new := Status(cur).SetWithMask(next, mask)
-	return atomic.CompareAndSwapUint64(c.status, cur, new)
+	upd := Status(cur).SetWithMask(next, mask)
+	return atomic.CompareAndSwapUint64(z.status, cur, upd)
 }
 
-// status 1010 mask 0011 result 0010
+// Querying example: status 1010 mask 0011 result 0010.
 func (s Status) Querying(m Mask) uint64 {
 	return uint64(s) & uint64(m)
 }
 
-// status 1010 mask 0011 result 1011
+// MaskedOn example: status 1010 mask 0011 result 1011.
 func (s Status) MaskedOn(m Mask) uint64 {
 	return uint64(s) | uint64(m)
 }
 
-// status 1010 mask 0011 result 1000
+// MaskedOff example: status 1010 mask 0011 result 1000.
 func (s Status) MaskedOff(m Mask) uint64 {
 	return uint64(s) &^ uint64(m)
 }
 
-// status 1010 mask 0011 set 0101 result 1001
+// SetWithMask example: status 1010 mask 0011 set 0101 result 1001.
 func (s Status) SetWithMask(set Status, m Mask) uint64 {
 	return s.MaskedOff(m) | set.Querying(m)
 }

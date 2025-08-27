@@ -12,11 +12,17 @@ type provider struct {
 	wgSd    *sync.WaitGroup
 	errChan chan<- error
 }
+type hcDynamic struct {
+	mu           *sync.Mutex
+	hcProcessing chan struct{}
+	hcErr        error
+}
 
 type Comp struct {
 	prov      provider
 	status    zorro.Zorro
 	object    any
+	hc        *hcDynamic
 	groupName string
 	name      string
 }
@@ -80,6 +86,7 @@ func DefineComponent(d Define) Comp {
 			errChan: d.ErrChan,
 		},
 		groupName: d.GroupName,
+		hc:        &hcDynamic{mu: &sync.Mutex{}},
 	}
 }
 
@@ -95,30 +102,30 @@ func (c Comp) IsHealthchecker() bool {
 	return c.status.GetStatus().Querying(healthcheckMask) != 0
 }
 
-func (c Comp) Healthchecker() healthcheck {
-	return healthcheck(c)
+func (c Comp) Healthchecker() Healthcheck {
+	return Healthcheck(c)
 }
 
 func (c Comp) IsInitializer() bool {
 	return c.status.GetStatus().Querying(initMask) != 0
 }
 
-func (c Comp) Initializer() initialize {
-	return initialize(c)
+func (c Comp) Initializer() Initialize {
+	return Initialize(c)
 }
 
 func (c Comp) IsRunner() bool {
 	return c.status.GetStatus().Querying(runMask) != 0
 }
 
-func (c Comp) Runner() run {
-	return run(c)
+func (c Comp) Runner() Run {
+	return Run(c)
 }
 
 func (c Comp) IsShutdowner() bool {
 	return c.status.GetStatus().Querying(shutdownMask) != 0
 }
 
-func (c Comp) Shutdowner() shutdown {
-	return shutdown(c)
+func (c Comp) Shutdowner() Shutdown {
+	return Shutdown(c)
 }

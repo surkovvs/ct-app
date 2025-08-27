@@ -1,3 +1,4 @@
+//nolint:depguard,gochecknoglobals // mock modules
 package modules
 
 import (
@@ -9,7 +10,10 @@ import (
 	"time"
 )
 
-var ErrModule = errors.New("module error")
+var (
+	ErrModule     = errors.New("module error")
+	tickFrequency = time.Millisecond * 500
+)
 
 type ElemCfg struct {
 	TotalDur time.Duration
@@ -41,26 +45,30 @@ func (m mimic) healthcheck(ctx context.Context, module any) error {
 }
 
 func executing(ctx context.Context, module any, name string, cfg ElemCfg, stage string) error {
-	log.Printf("--- internal module log: %s (%s): %s %s\n", name, reflect.ValueOf(module).Type().Name(), stage, "started")
-	defer log.Printf("--- internal module log: %s (%s): %s %s\n", name, reflect.ValueOf(module).Type().Name(), stage, "stopped")
+	log.Printf("--- internal module log: %s (%s): %s %s\n",
+		name, reflect.ValueOf(module).Type().Name(), stage, "started")
+	defer log.Printf("--- internal module log: %s (%s): %s %s\n",
+		name, reflect.ValueOf(module).Type().Name(), stage, "stopped")
 	exCtx := context.Background()
 	if cfg.TotalDur != 0 {
 		ctxTo, cancel := context.WithTimeout(ctx, cfg.TotalDur)
 		defer cancel()
 		exCtx = ctxTo
 	}
-	ticker := time.NewTicker(time.Millisecond * 500)
+	ticker := time.NewTicker(tickFrequency)
 EndlessCycle:
 	for {
 		select {
 		case <-ctx.Done():
-			log.Printf("--- internal module log: %s [%s]: %s\n", reflect.ValueOf(module).Type().Name(), name, "stage "+stage+" ended by external ctx")
-			return fmt.Errorf("%w: %w", ErrModule, ctx.Err())
+			log.Printf("--- internal module log: %s [%s]: %s\n",
+				reflect.ValueOf(module).Type().Name(), name, "stage "+stage+" ended by external ctx")
+			return fmt.Errorf("contex done: %w", ctx.Err())
 			// break EndlessCycle
 		case <-exCtx.Done():
 			break EndlessCycle
 		case <-ticker.C:
-			log.Printf("--- internal module log: %s [%s]: %s\n", reflect.ValueOf(module).Type().Name(), name, "executing "+stage)
+			log.Printf("--- internal module log: %s [%s]: %s\n",
+				reflect.ValueOf(module).Type().Name(), name, "executing "+stage)
 		}
 	}
 	if cfg.WantFail {
@@ -235,5 +243,40 @@ func (m ModuleInitSd) Init(ctx context.Context) error {
 }
 
 func (m ModuleInitSd) Shutdown(ctx context.Context) error {
+	return m.m.shutdown(ctx, m)
+}
+
+type (
+	ModuleHcInitSd struct {
+		m mimic
+	}
+	ModuleHcInitSdCfg struct {
+		Name        string
+		Healthcheck ElemCfg
+		Init        ElemCfg
+		Shutdown    ElemCfg
+	}
+)
+
+func NewModuleHcInitSd(cfg ModuleHcInitSdCfg) ModuleHcInitSd {
+	return ModuleHcInitSd{
+		m: mimic{
+			name:    cfg.Name,
+			initCfg: cfg.Init,
+			sdCfg:   cfg.Shutdown,
+			hcCfg:   cfg.Healthcheck,
+		},
+	}
+}
+
+func (m ModuleHcInitSd) Healthcheck(ctx context.Context) error {
+	return m.m.healthcheck(ctx, m)
+}
+
+func (m ModuleHcInitSd) Init(ctx context.Context) error {
+	return m.m.init(ctx, m)
+}
+
+func (m ModuleHcInitSd) Shutdown(ctx context.Context) error {
 	return m.m.shutdown(ctx, m)
 }
