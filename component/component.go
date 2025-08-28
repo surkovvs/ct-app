@@ -7,25 +7,27 @@ import (
 	"github.com/surkovvs/ct-app/zorro"
 )
 
-type provider struct {
-	wgExec  *sync.WaitGroup
-	wgSd    *sync.WaitGroup
-	errChan chan<- error
-}
-type hcDynamic struct {
-	mu           *sync.Mutex
-	hcProcessing chan struct{}
-	hcErr        error
-}
+type (
+	provider struct {
+		wgExec  *sync.WaitGroup
+		wgSd    *sync.WaitGroup
+		errChan chan<- error
+	}
+	hcDynamic struct {
+		mu           *sync.Mutex
+		hcProcessing chan struct{}
+		hcErr        error
+	}
 
-type Comp struct {
-	prov      provider
-	status    zorro.Zorro
-	object    any
-	hc        *hcDynamic
-	groupName string
-	name      string
-}
+	Comp struct {
+		prov      provider
+		status    zorro.Zorro
+		object    any
+		hc        *hcDynamic
+		groupName string
+		name      string
+	}
+)
 
 const (
 	initReady     zorro.Status = 1  // 0000000000000001
@@ -92,6 +94,10 @@ func DefineComponent(d Define) Comp {
 
 func (c Comp) IsValid() bool {
 	return c.status.GetStatus() != 0
+}
+
+func (c Comp) GroupName() string {
+	return c.groupName
 }
 
 func (c Comp) Name() string {

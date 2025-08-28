@@ -53,7 +53,8 @@ func (r Healthcheck) IsFailed() bool {
 	return r.status.GetStatus().CompareMasked(healthcheckFailed, healthcheckMask)
 }
 
-func (r Healthcheck) Healthcheck(ctx context.Context) error {
+// HealthcheckComponent - only one of the same methods for components which sets process status by itself.
+func (r Healthcheck) HealthcheckComponent(ctx context.Context) error {
 	if !r.IsInProcess() {
 		r.hc.mu.Lock()
 		defer r.hc.mu.Unlock()
@@ -62,10 +63,12 @@ func (r Healthcheck) Healthcheck(ctx context.Context) error {
 		defer close(r.hc.hcProcessing)
 
 		r.SetInProcess()
+
 		healthchecker, ok := r.object.(appifaces.Healthchecker)
 		if !ok {
 			panic(fmt.Sprintf(`group '%s', module '%s', incorrectly defined as Healthchecker`, r.groupName, r.name))
 		}
+
 		if err := healthchecker.Healthcheck(ctx); err != nil {
 			r.prov.errChan <- fmt.Errorf(
 				`group '%s', module '%s', healthcheck: %w`,

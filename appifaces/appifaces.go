@@ -29,6 +29,7 @@ type Logger interface {
 
 type Configurator interface {
 	IsSilientMode() bool
+	IsTolerantMode() bool
 	GetApplicationName() *string
 	GetInitTimeout() *time.Duration
 	GetShutdownTimeout() *time.Duration

@@ -118,6 +118,22 @@ func (cs *CompsStorage) GetUnsortedHealthcheckers() []component.Comp {
 	return compList
 }
 
+func (cs *CompsStorage) GetUnsortedInitializers() []component.Comp {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+
+	compList := make([]component.Comp, 0)
+	for _, group := range cs.groups {
+		for _, comp := range group.comps {
+			if comp.IsInitializer() {
+				compList = append(compList, comp)
+			}
+		}
+	}
+
+	return compList
+}
+
 func (cs *CompsStorage) GetUnsortedRunners() []component.Comp {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()

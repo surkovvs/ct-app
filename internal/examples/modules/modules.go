@@ -16,8 +16,9 @@ var (
 )
 
 type ElemCfg struct {
-	TotalDur time.Duration
-	WantFail bool
+	TotalDur       time.Duration
+	StopByCtxDelay time.Duration
+	WantFail       bool
 }
 
 type mimic struct {
@@ -62,8 +63,10 @@ EndlessCycle:
 		case <-ctx.Done():
 			log.Printf("--- internal module log: %s [%s]: %s\n",
 				reflect.ValueOf(module).Type().Name(), name, "stage "+stage+" ended by external ctx")
+			if cfg.StopByCtxDelay != 0 {
+				time.Sleep(cfg.StopByCtxDelay)
+			}
 			return fmt.Errorf("contex done: %w", ctx.Err())
-			// break EndlessCycle
 		case <-exCtx.Done():
 			break EndlessCycle
 		case <-ticker.C:

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/surkovvs/ct-app/appifaces"
+	"github.com/surkovvs/ct-app/component"
 	"github.com/surkovvs/ct-app/compstor"
 )
 
@@ -17,8 +18,8 @@ import (
 var (
 	DefaultProvidedSigs    = []os.Signal{syscall.SIGTERM, syscall.SIGINT}
 	DefaultShutdownTimeout = time.Second * 3
-	BackgroundGroup        = `background`
-	BackgroundSyncGroup    = `background_sync`
+	BackgroundGroup        = `background`      // Group, where initialization of modules is synced.
+	BackgroundSyncGroup    = `background_sync` // Group, where initialization of modules is synced.
 )
 
 type (
@@ -26,8 +27,11 @@ type (
 		wg            *sync.WaitGroup
 		done          chan struct{}
 		errFlow       chan error
+		initCtx       context.Context
+		runCtx        context.Context
 		initRunCancel context.CancelFunc
 		initTimeout   *time.Duration
+		tolerantMode  bool
 	}
 	shutdown struct {
 		ctx          context.Context
@@ -76,8 +80,6 @@ func New(opts ...AppOption) *App {
 	}
 	a.defaultSettingsCheckAndApply()
 
-	go a.accompaniment()
-
 	if err := a.storage.AddGroup(BackgroundGroup); err != nil &&
 		!errors.Is(err, compstor.ErrGroupAlreadyRegistered) {
 		a.logger.Error(`group addition`,
@@ -94,12 +96,24 @@ func (a *App) accompaniment() {
 	syscallC := make(chan os.Signal, 1)
 	signal.Notify(syscallC, a.shutdown.sigs...)
 	execDone := a.execution.done
+CycleLable:
 	for {
 		select {
 		case err := <-a.execution.errFlow:
 			a.logger.Error(`module error`,
 				"application", a.name,
 				`error`, err)
+			var trigger component.TriggerError
+			if errors.As(err, &trigger) && !a.execution.tolerantMode {
+				execDone = nil
+				signal.Stop(syscallC)
+
+				a.logger.Debug(`execution failed graceful shutdown started`,
+					"application", a.name)
+
+				a.execution.initRunCancel()
+				go a.gracefulShutdown()
+			}
 		case <-execDone:
 			execDone = nil
 			signal.Stop(syscallC)
@@ -119,6 +133,8 @@ func (a *App) accompaniment() {
 
 			a.execution.initRunCancel()
 			go a.gracefulShutdown()
+		case <-a.shutdown.shutdownDone:
+			break CycleLable
 		}
 	}
 }

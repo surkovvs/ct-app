@@ -8,15 +8,19 @@ import (
 )
 
 type ConfigApp struct {
-	Silient                  bool
-	KeepProcessOnModuleError bool // TODO: добавить реализацию
-	Name                     *string
-	InitTimeout              *time.Duration
-	ShutdownTimeout          *time.Duration
+	Silient         bool
+	TolerantMode    bool // TODO: добавить реализацию
+	Name            *string
+	InitTimeout     *time.Duration
+	ShutdownTimeout *time.Duration
 }
 
 func (c ConfigApp) IsSilientMode() bool {
 	return c.Silient
+}
+
+func (c ConfigApp) IsTolerantMode() bool {
+	return c.TolerantMode
 }
 
 func (c ConfigApp) GetApplicationName() *string {
@@ -49,6 +53,9 @@ func WithConfig(cfg appifaces.Configurator) AppOption {
 	return func(a *App) {
 		if cfg.IsSilientMode() {
 			a.logger = logStub{}
+		}
+		if cfg.IsTolerantMode() {
+			a.execution.tolerantMode = true
 		}
 		if cfg.GetApplicationName() != nil {
 			a.name = *cfg.GetApplicationName()

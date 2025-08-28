@@ -45,22 +45,34 @@ func (r Initialize) IsFailed() bool {
 	return r.status.GetStatus().CompareMasked(initFailed, initMask)
 }
 
-func (r Initialize) Init(ctx context.Context) {
+func (r Initialize) InitComponent(ctx context.Context) {
+	initDone := make(chan struct{})
+	defer close(initDone)
+
+	go func() {
+		select {
+		case <-ctx.Done():
+			r.prov.wgExec.Done()
+		case <-initDone:
+			if r.status.GetStatus().Querying(runMask) == 0 || r.IsFailed() {
+				r.prov.wgExec.Done()
+			}
+		}
+	}()
+
 	initializer, ok := r.object.(appifaces.Initializer)
 	if !ok {
 		panic(fmt.Sprintf(`group '%s', module '%s', incorrectly defined as Initializer`, r.groupName, r.name))
 	}
 	if err := initializer.Init(ctx); err != nil {
-		r.prov.errChan <- fmt.Errorf(
-			`group '%s', module '%s', init: %w`,
-			r.groupName, r.name, err)
+		r.prov.errChan <- TriggerError{
+			w: fmt.Errorf(
+				`group '%s', module '%s', init: %w`,
+				r.groupName, r.name, err),
+		}
 
 		r.SetFailed()
-		r.prov.wgExec.Done()
 		return
-	}
-	if r.status.GetStatus().Querying(runMask) == 0 {
-		r.prov.wgExec.Done()
 	}
 	r.SetDone()
 }

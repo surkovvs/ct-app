@@ -1,4 +1,3 @@
-//nolint:dupl // TODO: to next refactoring
 package component
 
 import (
@@ -46,7 +45,7 @@ func (r Shutdown) IsFailed() bool {
 	return r.status.GetStatus().CompareMasked(shutdownFailed, shutdownMask)
 }
 
-func (r Shutdown) Shutdown(ctx context.Context) {
+func (r Shutdown) ShutdownComponent(ctx context.Context) {
 	defer r.prov.wgSd.Done()
 
 	shutdowner, ok := r.object.(appifaces.Shutdowner)

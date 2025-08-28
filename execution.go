@@ -9,81 +9,6 @@ import (
 	"github.com/surkovvs/ct-app/compstor"
 )
 
-func (a *App) exec(ctx context.Context) {
-	a.fillupRunnersWg()
-	a.fillupShutdownWg()
-	a.logger.Debug(`app started`, `application`, a.name)
-
-	var initRunCtx context.Context
-	initRunCtx, a.execution.initRunCancel = context.WithCancel(ctx)
-
-	var initCtx context.Context
-	if a.execution.initTimeout != nil {
-		var cancel context.CancelFunc
-		initCtx, cancel = context.WithTimeout(initRunCtx, *a.execution.initTimeout)
-		defer cancel()
-	} else {
-		initCtx = initRunCtx
-	}
-
-	wg := sync.WaitGroup{}
-	// backgroung groups runs before others, all the components in background group runs concurrently
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		bgGroup, err := a.storage.GetGroupByName(BackgroundGroup)
-		if err != nil {
-			if errors.Is(err, compstor.ErrGroupNotFound) {
-				a.logger.Debug(`background group not found`,
-					"application", a.name)
-			} else {
-				a.logger.Error(`unexpected error`,
-					"application", a.name,
-					`group`, bgGroup.GetName(),
-					"error", err)
-			}
-		} else {
-			a.processBackground(initCtx, initRunCtx, bgGroup)
-		}
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		bgsGroup, err := a.storage.GetGroupByName(BackgroundSyncGroup)
-		if err != nil {
-			if errors.Is(err, compstor.ErrGroupNotFound) {
-				a.logger.Debug(`background group not found`,
-					"application", a.name)
-			} else {
-				a.logger.Error(`unexpected error`,
-					"application", a.name,
-					`group`, bgsGroup.GetName(),
-					"error", err)
-			}
-		} else {
-			a.processBackgroundSync(initCtx, initRunCtx, bgsGroup)
-		}
-	}()
-	wg.Wait()
-
-	for _, group := range a.storage.GetOrderedGroupList() {
-		if group.GetName() == BackgroundGroup {
-			continue
-		}
-		wg.Add(1)
-		go func(group compstor.SequentialGroup) {
-			defer wg.Done()
-			a.processInitializers(initCtx, group)
-			a.processRunners(initRunCtx, group)
-			a.processShutdowners(a.shutdown.ctx, group)
-		}(group)
-	}
-	wg.Wait()
-	a.execution.wg.Wait()
-
-	close(a.execution.done)
-}
-
 func (a *App) fillupRunnersWg() {
 	for _, group := range a.storage.GetOrderedGroupList() {
 		for _, module := range group.GetComponents() {
@@ -94,118 +19,143 @@ func (a *App) fillupRunnersWg() {
 	}
 }
 
-func (a *App) processBackground(initCtx, runCtx context.Context, group compstor.SequentialGroup) {
+func (a *App) fillupShutdownWg() {
+	for range a.storage.GetUnsortedShutdowners() {
+		a.shutdown.wg.Add(1)
+	}
+}
+
+func (a *App) exec() {
+	// backgroung groups runs before others, all the components in background group runs concurrently
 	wg := sync.WaitGroup{}
-	for _, module := range group.GetComponents() {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		a.processBackground()
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		a.processBackgroundSync()
+	}()
+	wg.Wait()
+
+	a.processSequentialGroups()
+
+	a.execution.wg.Wait()
+	close(a.execution.done)
+}
+
+func (a *App) processBackground() {
+	bgGroup, err := a.storage.GetGroupByName(BackgroundGroup)
+	if err != nil {
+		if errors.Is(err, compstor.ErrGroupNotFound) {
+			a.logger.Debug(`background group not found`,
+				"application", a.name)
+		} else {
+			a.logger.Error(`unexpected error`,
+				"application", a.name,
+				`group`, bgGroup.GetName(),
+				"error", err)
+		}
+	} else {
+		wg := sync.WaitGroup{}
+		for _, module := range bgGroup.GetComponents() {
+			wg.Add(1)
+			go func(module component.Comp) {
+				a.processInitializer(a.execution.initCtx, module)
+				wg.Done()
+				a.processRunner(a.execution.runCtx, module)
+				a.processShutdowner(a.shutdown.ctx, module)
+			}(module)
+		}
+		wg.Wait()
+	}
+}
+
+func (a *App) processBackgroundSync() {
+	bgsGroup, err := a.storage.GetGroupByName(BackgroundSyncGroup)
+	if err != nil {
+		if errors.Is(err, compstor.ErrGroupNotFound) {
+			a.logger.Debug(`background sync group not found`,
+				"application", a.name)
+		} else {
+			a.logger.Error(`unexpected error`,
+				"application", a.name,
+				`group`, bgsGroup.GetName(),
+				"error", err)
+		}
+	} else {
+		wg := sync.WaitGroup{}
+		for _, module := range bgsGroup.GetComponents() {
+			wg.Add(1)
+			go func(module component.Comp) {
+				a.processInitializer(a.execution.initCtx, module)
+				wg.Done()
+				wg.Wait()
+				a.processRunner(a.execution.runCtx, module)
+				a.processShutdowner(a.shutdown.ctx, module)
+			}(module)
+		}
+		wg.Wait()
+	}
+}
+
+func (a *App) processSequentialGroups() {
+	wg := sync.WaitGroup{}
+	for _, group := range a.storage.GetOrderedGroupList() {
+		if group.GetName() == BackgroundGroup {
+			continue
+		}
 		wg.Add(1)
-		go func(module component.Comp) {
-			if module.Initializer().TrySetInProcess() {
-				a.logger.Debug(`module initialization`,
-					`application`, a.name,
-					`group`, group.GetName(),
-					`module`, module.Name())
-
-				module.Initializer().Init(initCtx)
+		go func(group compstor.SequentialGroup) {
+			defer wg.Done()
+			for _, module := range group.GetComponents() {
+				a.processInitializer(a.execution.initCtx, module)
 			}
-			wg.Done()
-
-			if (module.Initializer().IsDone() || !module.IsInitializer()) &&
-				module.Runner().TrySetInProcess() {
-				a.logger.Debug(`module running`,
-					`application`, a.name,
-					`group`, group.GetName(),
-					`module`, module.Name())
-
-				module.Runner().Run(runCtx)
+			for _, module := range group.GetComponents() {
+				a.processRunner(a.execution.runCtx, module)
 			}
-
-			if module.Runner().IsDone() && module.Shutdowner().TrySetInProcess() {
-				a.logger.Debug(`module shutdown`,
-					`application`, a.name,
-					`group`, group.GetName(),
-					`module`, module.Name())
-
-				module.Shutdowner().Shutdown(a.shutdown.ctx)
+			for _, module := range group.GetComponents() {
+				a.processShutdowner(a.shutdown.ctx, module)
 			}
-		}(module)
+		}(group)
 	}
 	wg.Wait()
 }
 
-func (a *App) processBackgroundSync(initCtx, runCtx context.Context, group compstor.SequentialGroup) {
-	wg := sync.WaitGroup{}
-	for _, module := range group.GetComponents() {
-		wg.Add(1)
-		go func(module component.Comp) {
-			if module.Initializer().TrySetInProcess() {
-				a.logger.Debug(`module initialization`,
-					`application`, a.name,
-					`group`, group.GetName(),
-					`module`, module.Name())
+func (a *App) processInitializer(ctx context.Context, module component.Comp) {
+	if module.Initializer().TrySetInProcess() && ctx.Err() == nil {
+		a.logger.Debug(`module initialization`,
+			`application`, a.name,
+			`group`, module.GroupName(),
+			`module`, module.Name())
 
-				module.Initializer().Init(initCtx)
-			}
-			wg.Done()
-			wg.Wait()
-
-			if (module.Initializer().IsDone() || !module.IsInitializer()) &&
-				module.Runner().TrySetInProcess() {
-				a.logger.Debug(`module running`,
-					`application`, a.name,
-					`group`, group.GetName(),
-					`module`, module.Name())
-
-				module.Runner().Run(runCtx)
-			}
-
-			if module.Runner().IsDone() && module.Shutdowner().TrySetInProcess() {
-				a.logger.Debug(`module shutdown`,
-					`application`, a.name,
-					`group`, group.GetName(),
-					`module`, module.Name())
-
-				module.Shutdowner().Shutdown(a.shutdown.ctx)
-			}
-		}(module)
-	}
-	wg.Wait()
-}
-
-func (a *App) processInitializers(ctx context.Context, group compstor.SequentialGroup) {
-	for _, module := range group.GetComponents() {
-		if module.Initializer().TrySetInProcess() {
-			a.logger.Debug(`module initialization`,
-				`application`, a.name,
-				`group`, group.GetName(),
-				`module`, module.Name())
-
-			module.Initializer().Init(ctx)
-		}
+		module.Initializer().InitComponent(ctx)
 	}
 }
 
-func (a *App) processRunners(ctx context.Context, group compstor.SequentialGroup) {
-	for _, module := range group.GetComponents() {
-		if (module.Initializer().IsDone() || !module.IsInitializer()) &&
-			module.Runner().TrySetInProcess() {
-			a.logger.Debug(`module running`,
-				`application`, a.name,
-				`group`, group.GetName(),
-				`module`, module.Name())
+func (a *App) processRunner(ctx context.Context, module component.Comp) {
+	if (module.Initializer().IsDone() || !module.IsInitializer()) &&
+		module.Runner().TrySetInProcess() && ctx.Err() == nil {
+		a.logger.Debug(`module running`,
+			`application`, a.name,
+			`group`, module.GroupName(),
+			`module`, module.Name())
 
-			module.Runner().Run(ctx)
-		}
+		module.Runner().RunComponent(ctx)
+	} else if ctx.Err() != nil && (module.IsRunner() && module.Initializer().IsDone()) {
+		a.execution.wg.Done()
 	}
 }
 
-func (a *App) processShutdowners(ctx context.Context, group compstor.SequentialGroup) {
-	for _, module := range group.GetComponents() {
-		if module.Runner().IsDone() && module.Shutdowner().TrySetInProcess() {
-			a.logger.Debug(`module shutdown`,
-				`application`, a.name,
-				`group`, group.GetName(),
-				`module`, module.Name())
-			module.Shutdowner().Shutdown(ctx)
-		}
+func (a *App) processShutdowner(ctx context.Context, module component.Comp) {
+	if module.Runner().IsDone() && module.Shutdowner().TrySetInProcess() && ctx.Err() == nil {
+		a.logger.Debug(`module shutdown`,
+			`application`, a.name,
+			`group`, module.GroupName(),
+			`module`, module.Name())
+
+		module.Shutdowner().ShutdownComponent(ctx)
 	}
 }

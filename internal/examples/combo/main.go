@@ -24,14 +24,15 @@ func main() {
 	app := ctapp.New(
 		ctapp.WithConfig(ctapp.ConfigApp{
 			Silient:         false,
+			TolerantMode:    false,
 			Name:            &appName,
 			InitTimeout:     &initTimeout,
 			ShutdownTimeout: &shutdownTimeout,
 		}),
 		ctapp.WithLogger(slog.New(
 			slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-				// Level: slog.LevelDebug,
-				Level: slog.LevelWarn,
+				Level: slog.LevelDebug,
+				// Level: slog.LevelWarn,
 			}),
 		)),
 		ctapp.WithProvidedSigs(os.Interrupt),
@@ -88,17 +89,21 @@ func main() {
 			WantFail: false,
 		},
 		Init: modules.ElemCfg{
-			TotalDur: time.Millisecond * 500,
-			WantFail: false,
+			TotalDur:       time.Millisecond * 500,
+			StopByCtxDelay: time.Millisecond * 300,
+			WantFail:       false,
 		},
-		Run: modules.ElemCfg{},
+		Run: modules.ElemCfg{
+			StopByCtxDelay: time.Millisecond * 500,
+		},
 	}))
 
 	app.AddModuleToGroup("example_group_1", "module_1:2", modules.NewModuleInitRunSd(modules.ModuleInitRunSdCfg{
 		Name: "mock_1:2",
 		Init: modules.ElemCfg{
-			TotalDur: time.Millisecond * 500,
-			WantFail: false,
+			TotalDur:       time.Millisecond * 500,
+			StopByCtxDelay: time.Millisecond * 300,
+			WantFail:       false,
 		},
 		Shutdown: modules.ElemCfg{
 			TotalDur: time.Millisecond * 1600,
@@ -110,8 +115,22 @@ func main() {
 	app.AddModuleToGroup("example_group_2", "module_2", modules.NewModuleRunSd(modules.ModuleRunSdCfg{
 		Name: "mock_2",
 		Run: modules.ElemCfg{
-			TotalDur: time.Millisecond * 4000,
+			TotalDur:       time.Millisecond * 4000,
+			StopByCtxDelay: time.Millisecond * 1000,
+			WantFail:       false,
+		},
+		Shutdown: modules.ElemCfg{
+			TotalDur: time.Millisecond * 600,
 			WantFail: false,
+		},
+	}))
+
+	app.AddModuleToGroup("example_group_3", "module_3", modules.NewModuleRunSd(modules.ModuleRunSdCfg{
+		Name: "mock_3",
+		Run: modules.ElemCfg{
+			TotalDur:       time.Millisecond * 1000,
+			StopByCtxDelay: time.Millisecond * 1000,
+			WantFail:       true,
 		},
 		Shutdown: modules.ElemCfg{
 			TotalDur: time.Millisecond * 600,
