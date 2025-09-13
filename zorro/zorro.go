@@ -1,6 +1,9 @@
 package zorro
 
-import "sync/atomic"
+import (
+	"math/bits"
+	"sync/atomic"
+)
 
 type Zorro struct {
 	status *uint64
@@ -69,4 +72,9 @@ func (s Status) SetWithMask(set Status, m Mask) uint64 {
 
 func (s Status) CompareMasked(is Status, m Mask) bool {
 	return s.Querying(m) == is.Querying(m)
+}
+
+// ShiftTrailingZeros example: status 1000 mask 1100 result 0010.
+func (s Status) ShiftTrailingZeros(m Mask) uint64 {
+	return uint64(s >> bits.TrailingZeros64(uint64(m)))
 }

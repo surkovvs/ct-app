@@ -10,8 +10,8 @@ import (
 
 func (a *App) Start(ctx context.Context) {
 	go a.accompaniment()
-	a.fillupRunnersWg()
-	a.fillupShutdownWg()
+	// a.fillupRunnersWg()
+	// a.fillupShutdownWg()
 	a.execution.runCtx, a.execution.initRunCancel = context.WithCancel(ctx)
 	if a.execution.initTimeout != nil {
 		var cancel context.CancelFunc
@@ -27,12 +27,9 @@ func (a *App) Start(ctx context.Context) {
 
 func (a *App) AddModuleToGroup(groupName, moduleName string, module any) {
 	comp := component.DefineComponent(component.Define{
-		GroupName:  groupName,
-		CompName:   moduleName,
-		Component:  module,
-		ExecWG:     a.execution.wg,
-		ShutdownWG: a.shutdown.wg,
-		ErrChan:    a.execution.errFlow,
+		GroupName: groupName,
+		CompName:  moduleName,
+		Component: module,
 	})
 	if !comp.IsValid() {
 		a.logger.Error(`module addition`,

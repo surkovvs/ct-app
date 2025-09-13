@@ -3,7 +3,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"log/slog"
 	"os"
 	"time"
@@ -24,7 +23,7 @@ func main() {
 	app := ctapp.New(
 		ctapp.WithConfig(ctapp.ConfigApp{
 			Silient:         false,
-			TolerantMode:    false,
+			TolerantMode:    true,
 			Name:            &appName,
 			InitTimeout:     &initTimeout,
 			ShutdownTimeout: &shutdownTimeout,
@@ -38,49 +37,49 @@ func main() {
 		ctapp.WithProvidedSigs(os.Interrupt),
 	)
 
-	app.AddBackgroundModule("module_bg_1", modules.NewModuleInitRunSd(modules.ModuleInitRunSdCfg{
-		Name: "mock_bg_1",
-		Init: modules.ElemCfg{
-			TotalDur: time.Millisecond * 750,
-			WantFail: false,
-		},
-		Run: modules.ElemCfg{
-			TotalDur: time.Millisecond * 3000,
-			WantFail: false,
-		},
-		Shutdown: modules.ElemCfg{
-			TotalDur: time.Millisecond * 1000,
-			WantFail: false,
-		},
-	}))
+	// app.AddBackgroundModule("module_bg_1", modules.NewModuleInitRunSd(modules.ModuleInitRunSdCfg{
+	// 	Name: "mock_bg_1",
+	// 	Init: modules.ElemCfg{
+	// 		TotalDur: time.Millisecond * 750,
+	// 		WantFail: false,
+	// 	},
+	// 	Run: modules.ElemCfg{
+	// 		TotalDur: time.Millisecond * 3000,
+	// 		WantFail: false,
+	// 	},
+	// 	Shutdown: modules.ElemCfg{
+	// 		TotalDur: time.Millisecond * 1000,
+	// 		WantFail: false,
+	// 	},
+	// }))
 
-	app.AddBackgroundModule("module_bg_2", modules.NewModuleInitSd(modules.ModuleInitSdCfg{
-		Name: "mock_bg_2",
-		Init: modules.ElemCfg{
-			TotalDur: time.Millisecond * 750,
-			WantFail: false,
-		},
-		Shutdown: modules.ElemCfg{
-			TotalDur: time.Millisecond * 1000,
-			WantFail: false,
-		},
-	}))
+	// app.AddBackgroundModule("module_bg_2", modules.NewModuleInitSd(modules.ModuleInitSdCfg{
+	// 	Name: "mock_bg_2",
+	// 	Init: modules.ElemCfg{
+	// 		TotalDur: time.Millisecond * 750,
+	// 		WantFail: false,
+	// 	},
+	// 	Shutdown: modules.ElemCfg{
+	// 		TotalDur: time.Millisecond * 1000,
+	// 		WantFail: false,
+	// 	},
+	// }))
 
-	app.AddBackgroundModule("module_bg_3", modules.NewModuleHcInitSd(modules.ModuleHcInitSdCfg{
-		Name: "mock_bg_3",
-		Healthcheck: modules.ElemCfg{
-			TotalDur: time.Millisecond * 750,
-			WantFail: true,
-		},
-		Init: modules.ElemCfg{
-			TotalDur: time.Millisecond * 750,
-			WantFail: false,
-		},
-		Shutdown: modules.ElemCfg{
-			TotalDur: time.Millisecond * 1000,
-			WantFail: false,
-		},
-	}))
+	// app.AddBackgroundModule("module_bg_3", modules.NewModuleHcInitSd(modules.ModuleHcInitSdCfg{
+	// 	Name: "mock_bg_3",
+	// 	Healthcheck: modules.ElemCfg{
+	// 		TotalDur: time.Millisecond * 750,
+	// 		WantFail: true,
+	// 	},
+	// 	Init: modules.ElemCfg{
+	// 		TotalDur: time.Millisecond * 750,
+	// 		WantFail: false,
+	// 	},
+	// 	Shutdown: modules.ElemCfg{
+	// 		TotalDur: time.Millisecond * 1000,
+	// 		WantFail: false,
+	// 	},
+	// }))
 
 	app.AddModuleToGroup("example_group_1", "module_1:1", modules.NewModuleHcInitRun(modules.ModuleHcInitRunCfg{
 		Name: "mock_1:1",
@@ -138,17 +137,17 @@ func main() {
 		},
 	}))
 
-	go func() {
-		for {
-			time.Sleep(time.Second * 2)
-			ctxTo, cancel := context.WithTimeout(context.Background(), time.Millisecond*1000)
-			errs := app.Healthcheck(ctxTo)
-			cancel()
-			if len(errs) != 0 {
-				log.Printf("*** healthcheck errors reporting: %+v", errs)
-			}
-		}
-	}()
+	// go func() {
+	// 	for {
+	// 		time.Sleep(time.Second * 2)
+	// 		ctxTo, cancel := context.WithTimeout(context.Background(), time.Millisecond*1000)
+	// 		errs := app.Healthcheck(ctxTo)
+	// 		cancel()
+	// 		if len(errs) != 0 {
+	// 			log.Printf("*** healthcheck errors reporting: %+v", errs)
+	// 		}
+	// 	}
+	// }()
 	ctx := context.Background()
 	app.Start(ctx)
 }

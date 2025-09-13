@@ -26,7 +26,7 @@ type (
 	execution struct {
 		wg            *sync.WaitGroup
 		done          chan struct{}
-		errFlow       chan error
+		reports       chan component.Report
 		initCtx       context.Context
 		runCtx        context.Context
 		initRunCancel context.CancelFunc
@@ -34,9 +34,9 @@ type (
 		tolerantMode  bool
 	}
 	shutdown struct {
-		ctx          context.Context
-		ctxCancel    context.CancelFunc
-		wg           *sync.WaitGroup
+		ctx       context.Context
+		ctxCancel context.CancelFunc
+		// wg           *sync.WaitGroup
 		shutdownDone chan struct{}
 		sigs         []os.Signal
 		timeout      *time.Duration
@@ -57,14 +57,14 @@ func New(opts ...AppOption) *App {
 		execution: execution{
 			wg:            &sync.WaitGroup{},
 			done:          make(chan struct{}),
-			errFlow:       make(chan error),
+			reports:       make(chan component.Report),
 			initRunCancel: nil,
 			initTimeout:   nil,
 		},
 		shutdown: shutdown{
-			ctx:          sdCtx,
-			ctxCancel:    sdCancel,
-			wg:           &sync.WaitGroup{},
+			ctx:       sdCtx,
+			ctxCancel: sdCancel,
+			// wg:           &sync.WaitGroup{},
 			shutdownDone: make(chan struct{}),
 			sigs:         nil,
 			timeout:      nil,
@@ -99,20 +99,29 @@ func (a *App) accompaniment() {
 CycleLable:
 	for {
 		select {
-		case err := <-a.execution.errFlow:
-			a.logger.Error(`module error`,
-				"application", a.name,
-				`error`, err)
-			var trigger component.TriggerError
-			if errors.As(err, &trigger) && !a.execution.tolerantMode {
-				execDone = nil
-				signal.Stop(syscallC)
+		case rep := <-a.execution.reports:
+			switch rep.Code {
+			case component.CodeEmpty:
+			case component.CodeInfo:
+				a.logger.Debug(`module message`,
+					`application`, a.name,
+					`message`, rep.String())
+			case component.CodeError:
+				a.logger.Error(`module error`,
+					"application", a.name,
+					`error`, rep.String())
+				if !a.execution.tolerantMode {
+					execDone = nil
+					signal.Stop(syscallC)
 
-				a.logger.Debug(`execution failed graceful shutdown started`,
-					"application", a.name)
+					a.logger.Debug(`execution failed graceful shutdown started`,
+						"application", a.name)
 
-				a.execution.initRunCancel()
-				go a.gracefulShutdown()
+					a.execution.initRunCancel()
+					go a.gracefulShutdown()
+
+					a.execution.tolerantMode = true
+				}
 			}
 		case <-execDone:
 			execDone = nil
